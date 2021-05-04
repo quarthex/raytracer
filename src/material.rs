@@ -7,11 +7,13 @@ use crate::vec3::{
 
 pub(crate) type Scatter = Option<(Ray, Color)>;
 
-pub(crate) trait Material: std::fmt::Debug {
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord, scattered: &Ray) -> Scatter;
+pub(crate) trait Material {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord<Self>, scattered: &Ray) -> Scatter
+    where
+        Self: std::marker::Sized;
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Lambertian {
     albedo: Color,
 }
@@ -23,7 +25,7 @@ impl Lambertian {
 }
 
 impl Material for Lambertian {
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord, _scatteredd: &Ray) -> Scatter {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord<Self>, _scatteredd: &Ray) -> Scatter {
         let mut scatter_direction = rec.normal() + random_unit_vector();
 
         // Catch degenerate scatter direction
@@ -38,7 +40,7 @@ impl Material for Lambertian {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Metal {
     albedo: Color,
     fuzz: f64,
@@ -54,7 +56,7 @@ impl Metal {
 }
 
 impl Material for Metal {
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord, _scatter: &Ray) -> Scatter {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord<Self>, _scatter: &Ray) -> Scatter {
         let reflected = reflect(&unit_vector(r_in.direction()), rec.normal());
 
         // The book has this surrounded by something like:
@@ -76,7 +78,7 @@ impl Material for Metal {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Dielectric {
     ir: f64, // Index of refraction
 }
@@ -95,7 +97,7 @@ impl Dielectric {
 }
 
 impl Material for Dielectric {
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord, _scattered: &Ray) -> Scatter {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord<Self>, _scattered: &Ray) -> Scatter {
         let attenuation = Color::new(1.0, 1.0, 1.0);
         let refraction_ratio = if *rec.front_face() {
             1.0 / self.ir

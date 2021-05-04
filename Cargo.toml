@@ -13,6 +13,7 @@ image = "0.23.14"
 indicatif = "0.15.0"
 lazy_static = "1.4.0"
 nalgebra = "0.26.1"
+num_cpus = "1.13.0"
 rand = "0.8.3"
 serde = { version = "1.0.125", features = ["derive"] }
 serde_yaml = "0.8.17"

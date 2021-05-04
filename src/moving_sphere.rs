@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use core::fmt::Debug;
 
 use crate::hittable::{HitRecord, Hittable};
 use crate::material::Material;
@@ -7,19 +7,19 @@ use crate::scene_loader::StartEndPair;
 use crate::vec3::{length_squared, Point3};
 
 #[derive(Debug)]
-pub(crate) struct MovingSphere {
+pub(crate) struct MovingSphere<M: Material + Debug> {
     center: StartEndPair<Point3>,
     time: StartEndPair<f64>,
     radius: f64,
-    material: Rc<dyn Material>,
+    material: M,
 }
 
-impl MovingSphere {
+impl<M: Material + Debug> MovingSphere<M> {
     pub(crate) fn new(
         center: StartEndPair<Point3>,
         time: StartEndPair<f64>,
         radius: f64,
-        material: Rc<dyn Material>,
+        material: M,
     ) -> Self {
         Self {
             center,
@@ -36,8 +36,10 @@ impl MovingSphere {
     }
 }
 
-impl Hittable for MovingSphere {
-    fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
+impl<M: Material + Clone + Debug> Hittable for MovingSphere<M> {
+    type Material = M;
+
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord<Self::Material>> {
         let oc = r.origin() - self.center(r.time());
         let a = length_squared(r.direction());
         let half_b = oc.dot(r.direction());

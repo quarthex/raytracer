@@ -1,19 +1,17 @@
-use std::rc::Rc;
-
 use crate::material::Material;
 use crate::ray::Ray;
 use crate::vec3::{Point3, Vec3};
 
-pub(crate) struct HitRecord {
+pub(crate) struct HitRecord<M: Material> {
     p: Point3,
     normal: Vec3,
-    material: Rc<dyn Material>,
+    material: M,
     t: f64,
     front_face: bool,
 }
 
-impl HitRecord {
-    pub(crate) fn new(p: Point3, normal: Vec3, material: Rc<dyn Material>, t: f64) -> Self {
+impl<M: Material> HitRecord<M> {
+    pub(crate) fn new(p: Point3, normal: Vec3, material: M, t: f64) -> Self {
         Self {
             p,
             normal,
@@ -31,7 +29,7 @@ impl HitRecord {
         &self.normal
     }
 
-    pub(crate) fn material(&self) -> &Rc<dyn Material> {
+    pub(crate) fn material(&self) -> &M {
         &self.material
     }
 
@@ -65,6 +63,7 @@ impl HitRecord {
     }
 }
 
-pub(crate) trait Hittable: std::fmt::Debug {
-    fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord>;
+pub(crate) trait Hittable {
+    type Material: Material;
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord<Self::Material>>;
 }

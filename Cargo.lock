@@ -617,6 +617,7 @@ dependencies = [
  "indicatif",
  "lazy_static",
  "nalgebra",
+ "num_cpus",
  "rand",
  "serde",
  "serde_yaml",

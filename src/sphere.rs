@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use core::fmt::Debug;
 
 use crate::hittable::{HitRecord, Hittable};
 use crate::material::Material;
@@ -6,14 +6,14 @@ use crate::ray::Ray;
 use crate::vec3::{length_squared, Point3};
 
 #[derive(Debug)]
-pub(crate) struct Sphere {
+pub(crate) struct Sphere<M: Material + Debug> {
     center: Point3,
     radius: f64,
-    material: Rc<dyn Material>,
+    material: M,
 }
 
-impl Sphere {
-    pub(crate) fn new(center: Point3, radius: f64, material: Rc<dyn Material>) -> Self {
+impl<M: Material + Debug> Sphere<M> {
+    pub(crate) fn new(center: Point3, radius: f64, material: M) -> Self {
         Self {
             center,
             radius,
@@ -22,8 +22,10 @@ impl Sphere {
     }
 }
 
-impl Hittable for Sphere {
-    fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
+impl<M: Material + Clone + Debug> Hittable for Sphere<M> {
+    type Material = M;
+
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord<M>> {
         let oc = r.origin() - self.center;
         let a = length_squared(r.direction());
         let half_b = oc.dot(r.direction());

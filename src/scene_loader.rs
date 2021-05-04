@@ -1,29 +1,31 @@
 use std::io::prelude::*;
-use std::rc::Rc;
 
 use color_eyre::eyre::Result;
 use serde::Deserialize;
 
+use crate::hittable::HitRecord;
 use crate::hittable_list::HittableList;
-use crate::material::{Dielectric, Lambertian, Metal};
+use crate::material::{Dielectric, Lambertian, Metal, Scatter};
 use crate::moving_sphere::MovingSphere;
 use crate::sphere::Sphere;
+use crate::Hittable;
+use crate::Ray;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Point3 {
     x: f64,
     y: f64,
     z: f64,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Color {
     r: f64,
     g: f64,
     b: f64,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum Material {
     Metal { albedo: Color, fuzz: f64 },
@@ -31,7 +33,31 @@ pub(crate) enum Material {
     Dielectric { ir: f64 },
 }
 
-#[derive(Deserialize, Debug)]
+impl crate::Material for Material {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord<Self>, scattered: &Ray) -> Scatter {
+        match self {
+            Self::Metal { albedo, fuzz } => {
+                let albedo = crate::Color::new(albedo.r, albedo.g, albedo.b);
+                let material = Metal::new(albedo, *fuzz);
+                let rec = HitRecord::new(*rec.p(), *rec.normal(), material.clone(), *rec.t());
+                material.scatter(r_in, &rec, scattered)
+            }
+            Self::Lambertian { albedo } => {
+                let albedo = crate::Color::new(albedo.r, albedo.g, albedo.b);
+                let material = Lambertian::new(albedo);
+                let rec = HitRecord::new(*rec.p(), *rec.normal(), material.clone(), *rec.t());
+                material.scatter(r_in, &rec, scattered)
+            }
+            Self::Dielectric { ir } => {
+                let material = Dielectric::new(*ir);
+                let rec = HitRecord::new(*rec.p(), *rec.normal(), material.clone(), *rec.t());
+                material.scatter(r_in, &rec, scattered)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Debug)]
 pub(crate) struct StartEndPair<T> {
     start: T,
     end: T,
@@ -51,7 +77,7 @@ impl<T> StartEndPair<T> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum Object {
     Sphere {
@@ -67,20 +93,36 @@ pub(crate) enum Object {
     },
 }
 
-fn make_material(material: Material) -> Rc<dyn crate::material::Material> {
-    match material {
-        Material::Lambertian { albedo } => Rc::new(Lambertian::new(crate::Color::new(
-            albedo.r, albedo.g, albedo.b,
-        ))),
-        Material::Metal { albedo, fuzz } => Rc::new(Metal::new(
-            crate::Color::new(albedo.r, albedo.g, albedo.b),
-            fuzz,
-        )),
-        Material::Dielectric { ir } => Rc::new(Dielectric::new(ir)),
+impl Hittable for Object {
+    type Material = Material;
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord<Self::Material>> {
+        match self {
+            Self::Sphere {
+                center,
+                radius,
+                material,
+            } => {
+                let center = crate::Point3::new(center.x, center.y, center.z);
+                Sphere::new(center, *radius, material.clone()).hit(r, t_min, t_max)
+            }
+            Self::MovingSphere {
+                center,
+                time,
+                radius,
+                material,
+            } => {
+                let center = StartEndPair {
+                    start: crate::vec3::Point3::new(center.start.x, center.start.y, center.start.z),
+                    end: crate::vec3::Point3::new(center.end.x, center.end.y, center.end.z),
+                };
+                MovingSphere::new(center, time.clone(), *radius, material.clone())
+                    .hit(r, t_min, t_max)
+            }
+        }
     }
 }
 
-pub(crate) fn load_scene(path: &str) -> Result<HittableList> {
+pub(crate) fn load_scene(path: &str) -> Result<HittableList<Object>> {
     let mut scene_yml;
 
     if path == "-" {
@@ -93,34 +135,8 @@ pub(crate) fn load_scene(path: &str) -> Result<HittableList> {
 
     let scene = serde_yaml::from_str::<Vec<Object>>(&scene_yml)?;
     let mut world = HittableList::new();
-
     for object in scene {
-        match object {
-            Object::Sphere {
-                center,
-                radius,
-                material,
-            } => {
-                let center = crate::vec3::Point3::new(center.x, center.y, center.z);
-                let material = make_material(material);
-
-                world.add(Box::new(Sphere::new(center, radius, material)));
-            }
-            Object::MovingSphere {
-                center,
-                radius,
-                material,
-                time,
-            } => {
-                let material = make_material(material);
-                let center = StartEndPair {
-                    start: crate::vec3::Point3::new(center.start.x, center.start.y, center.start.z),
-                    end: crate::vec3::Point3::new(center.end.x, center.end.y, center.end.z),
-                };
-
-                world.add(Box::new(MovingSphere::new(center, time, radius, material)));
-            }
-        }
+        world.add(object);
     }
 
     Ok(world)

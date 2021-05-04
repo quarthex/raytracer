@@ -1,3 +1,7 @@
+use std::sync::Arc;
+use std::sync::mpsc::channel;
+use std::thread::spawn;
+
 use argh::FromArgs;
 use color_eyre::eyre::Result;
 use image::ColorType;
@@ -6,6 +10,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use camera::Camera;
 use color::clamp_color;
 use hittable::Hittable;
+use material::Material;
 use ray::Ray;
 use rtweekend::{random_double, INFINITY};
 use scene_loader::{load_scene, StartEndPair};
@@ -63,7 +68,7 @@ struct Args {
     vfov: f64,
 }
 
-fn ray_color(r: &Ray, world: &dyn Hittable, depth: usize) -> Color {
+fn ray_color<H: Hittable>(r: &Ray, world: &H, depth: usize) -> Color {
     // If we've exceeded the ray bounce limit, no more light is gathered.
     if depth == 0 {
         return Color::new(0.0, 0.0, 0.0);
@@ -116,6 +121,7 @@ fn main() -> Result<()> {
     );
 
     let world = load_scene(&args.scene_file)?;
+    let world = Arc::new(world);
 
     // Camera
 
@@ -135,27 +141,47 @@ fn main() -> Result<()> {
         dist_to_focus,
         StartEndPair::new(0.0, 1.0),
     );
+    let camera = Arc::new(camera);
 
     // Render
     let mut image_data = Vec::with_capacity((image_width * image_height * 3) as usize);
+    let num_cpus = num_cpus::get(); // get it once for all
+    let workers: Vec<_> = (0..num_cpus)
+        .map(|n| {
+            let world = world.clone();
+            let camera = camera.clone();
+            let (sender, receiver) = channel();
+            spawn(move || {
+                for j in (0..image_height)
+                    .filter(|j| *j as usize % num_cpus == n)
+                    .rev()
+                {
+                    for i in 0..image_width {
+                        let pixel_color = (0..samples_per_pixel)
+                            .map(|_| {
+                                let u = (i as f64 + random_double()) / (image_width - 1) as f64;
+                                let v = (j as f64 + random_double()) / (image_height - 1) as f64;
+                                camera.get_ray(u, v)
+                            })
+                            .fold(Color::new(0.0, 0.0, 0.0), |pixel_color, r| {
+                                pixel_color + ray_color(&r, world.as_ref(), max_depth)
+                            });
+
+                        let color = clamp_color(&pixel_color, samples_per_pixel);
+                        sender.send(color).ok();
+                    }
+                }
+            });
+            receiver
+        })
+        .collect(); // create workers list
 
     for j in (0..image_height).rev() {
         pb.inc(1);
+        let worker = &workers[j as usize % num_cpus];
 
-        for i in 0..image_width {
-            let pixel_color = (0..samples_per_pixel)
-                .map(|_| {
-                    let u = (i as f64 + random_double()) / (image_width - 1) as f64;
-                    let v = (j as f64 + random_double()) / (image_height - 1) as f64;
-
-                    camera.get_ray(u, v)
-                })
-                .fold(Color::new(0.0, 0.0, 0.0), |pixel_color, r| {
-                    pixel_color + ray_color(&r, &world, max_depth)
-                });
-
-            let (r, g, b) = clamp_color(&pixel_color, samples_per_pixel);
-
+        for _ in 0..image_width {
+            let (r, g, b) = worker.recv()?;
             image_data.push(r);
             image_data.push(g);
             image_data.push(b);
